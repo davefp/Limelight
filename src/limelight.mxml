@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:WindowedApplication xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute"
+						currentState="step1" xmlns:net="flash.net.*" width="640" height="480" backgroundGradientAlphas="[1.0, 1.0]" backgroundGradientColors="[#FFFFFF, #FFFFFF]">
+	<mx:states>
+		<mx:State name="step1">
+			<mx:AddChild position="lastChild">
+				<mx:VBox horizontalAlign="center" top="73" left="50" right="50" bottom="50">
+					<mx:Form>
+						<mx:FormItem label="Domain" direction="horizontal">
+							<mx:TextInput id="domain" width="150"/>
+						</mx:FormItem>
+						<mx:FormItem label="API Key" direction="horizontal">
+							<mx:TextInput id="apiKey" width="150"/>
+							<mx:Image source="img/help-browser.png" click="{showAPIHelp()}"  buttonMode="true"/>
+						</mx:FormItem>
+					</mx:Form>
+					<mx:Spacer width="100%" height="100%"/>
+					<mx:HBox width="100%" horizontalAlign="right">
+						<mx:Button click="getProjects()" label="Get Projects -&gt;"/>
+					</mx:HBox>
+				</mx:VBox>
+			</mx:AddChild>
+		</mx:State>
+		<mx:State name="step2">
+			<mx:AddChild position="lastChild">
+				<mx:VBox horizontalAlign="center" top="73" left="50" right="50" bottom="50">
+					<mx:Form>
+						<mx:FormItem label="Project">
+							<mx:ComboBox id="projectSelect" dataProvider="{projectsService.lastResult.projects.project}" labelField="name" width="150"></mx:ComboBox>
+						</mx:FormItem>
+						<mx:FormItem label="Created On">
+							<mx:Label text="{projectSelect.selectedItem['created-at']}" width="200"/>
+						</mx:FormItem>
+						<mx:FormItem label="Project Description">
+							<mx:Text text="{projectSelect.selectedItem.description}" width="200"/>
+						</mx:FormItem>
+					</mx:Form>
+					<mx:Spacer width="100%" height="100%"/>
+					<mx:HBox width="100%">
+						<mx:Button label="&lt;- Back" click="{currentState = 'step1'}"/>
+						<mx:Spacer width="100%" height="100%"/>
+						<mx:Button label="Search Tickets -&gt;" click="{currentState = 'step3'; getTickets()}"/>
+					</mx:HBox>
+				</mx:VBox>
+			</mx:AddChild>
+		</mx:State>
+		<mx:State name="loading">
+			<mx:AddChild position="lastChild">
+				<mx:Label text="Please Wait..." horizontalCenter="0" fontWeight="bold" top="73"/>
+			</mx:AddChild>
+		</mx:State>
+		<mx:State name="fault">
+			<mx:AddChild position="lastChild">
+				<mx:VBox horizontalCenter="0" top="73">
+					<mx:Label text="There has been a glitch in the Matrix"/>
+					<mx:Button label="&lt;- Return" click="{currentState = 'step1'}"/>
+				</mx:VBox>
+			</mx:AddChild>
+		</mx:State>
+		<mx:State name="step3">
+			<mx:AddChild position="lastChild">
+				<mx:VBox left="50" right="50" top="73" bottom="50" horizontalAlign="center">
+					<mx:Form>
+						<mx:FormItem label="Search Tickets" horizontalAlign="right">
+							<mx:TextInput width="150" id="ticketSearchText"/>
+							<mx:Button label="Search" click="{getTickets()}"/>
+						</mx:FormItem>
+					</mx:Form>
+					<mx:DataGrid dataProvider="{tickets}" id="ticketsDataGrid" width="400" height="150">
+						<mx:columns>
+							<mx:DataGridColumn dataField="number" headerText="#" width="40"/>
+							<mx:DataGridColumn dataField="state" headerText="State"/>
+							<mx:DataGridColumn dataField="title" headerText="Title"/>
+							<mx:DataGridColumn dataField="assigned-user-name" headerText="Assigned User"/>
+						</mx:columns>
+					</mx:DataGrid>
+					<mx:Spacer width="100%" height="100%"/>
+					<mx:HBox width="100%">
+						<mx:Button label="&lt;- Back" click="{currentState = 'step2'}"/>
+						<mx:Spacer width="100%" height="100%"/>
+						<mx:Button label="Save To Desktop" click="{saveToDisk()}"/>
+					</mx:HBox>
+				</mx:VBox>
+			</mx:AddChild>
+		</mx:State>
+	</mx:states>
+	
+	
+	<mx:HTTPService id="projectsService" url="https://{domain.text}.lighthouseapp.com/projects.xml"
+					useProxy="false" method="GET"
+					result="{getProjectsSuccess()}" fault="{getProjectsFault()}"/>
+					
+	<mx:HTTPService id="ticketsService" url="https://{domain.text}.lighthouseapp.com/projects/{projectSelect.selectedItem.id}/tickets.xml?limit={TICKET_LIMIT}&amp;page={currentPage}&amp;q={ticketSearchText.text}"
+					useProxy="false" method="GET"
+					result="{getTicketsSuccess()}" fault="{getTicketsFault()}"/>
+
+	
+	<mx:Script>
+		<![CDATA[
+			import flash.net.navigateToURL;
+			import mx.collections.ListCollectionView;
+			import mx.controls.Alert;
+			import com.hillelcoren.utils.DataGridUtils;
+			import mx.collections.ArrayCollection;
+			import mx.utils.Base64Encoder;
+		
+			private static const FAKE_PASSWORD:String = "x";
+			private static const TICKET_LIMIT:String = "100";
+			private static const API_KEY_HELP_LINK:String = 'https://lighthouse.tenderapp.com/faqs/api/how-do-i-get-an-api-token';
+			
+			[Bindable] private var tickets:ArrayCollection = new ArrayCollection();
+			
+			[Bindable] private var currentPage:int = 1;
+
+			
+			private function getProjects():void {
+				authorize(projectsService);
+				projectsService.send();
+				currentState = "loading";
+			}
+			
+			private function getProjectsSuccess():void {
+				currentState = "step2";
+			}
+			
+			private function getProjectsFault():void {
+				currentState = "fault";
+			}
+			
+			private function getTickets():void {
+				authorize(ticketsService);
+				tickets = new ArrayCollection();
+				currentPage = 1;
+				ticketsService.send();
+				currentState="loading";
+			}
+			
+			private function getTicketsSuccess():void {
+				if(ticketsService.lastResult['nil-classes'] == null) {
+					tickets.addAll(ticketsService.lastResult.tickets.ticket);
+					currentPage++;
+					ticketsService.send();
+				} else {
+					currentState="step3";
+				}
+			}
+			
+			private function getTicketsFault():void {
+				currentState="fault";
+			}
+			
+			private function exportTickets():void {
+				currentState = "step4";
+			}
+			
+			private function saveToDisk():void {
+				//create data set
+				var data:DataGrid = new DataGrid();
+				data.dataProvider = tickets;
+				var objectReplacer:RegExp = /\[object Object\]/g;
+				var csvResults:String = DataGridUtils.copyData(data,DataGridUtils.TYPE_CSV,DataGridUtils.EXPORT_ALL).replace(objectReplacer,"");
+				
+				//save it
+				var file:File = File.desktopDirectory.resolvePath(projectSelect.selectedItem.name + ".csv");
+				file.addEventListener(Event.COMPLETE, fileSaved);
+				file.addEventListener(IOErrorEvent.IO_ERROR, fileSaveError);
+				file.save(csvResults);
+			}
+			
+			private function saveToGoogle():void {
+				Alert.show("Not supported");
+			}
+			
+			private function fileSaved(e:Event):void {
+				Alert.show("File saved");
+			}
+			
+			private function fileSaveError(e:Event):void {
+				Alert.show("Error saving file");
+			}
+			
+			private function authorize(service:HTTPService):void {
+				var encoder:Base64Encoder = new Base64Encoder();
+				encoder.encode(apiKey.text + ":" + FAKE_PASSWORD);
+				service.headers["Authorization"] = "Basic " + encoder.toString();
+			}
+			
+			private function showAPIHelp():void {
+				navigateToURL(new URLRequest(API_KEY_HELP_LINK));
+			}
+		]]>
+	</mx:Script>
+	<mx:HBox width="100%" horizontalCenter="0" top="10" horizontalAlign="center">
+		<mx:Image source="img/icon_048.png"/>
+		<mx:Image source="img/limelight-text.png"/>
+	</mx:HBox>
+	
+</mx:WindowedApplication>
